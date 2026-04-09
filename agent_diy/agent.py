@@ -101,6 +101,8 @@ class Agent(BaseAgent):
 
         将原始环境观测转换为 ObsData + remain_info。
         """
+
+        # TODO： 重建feature和reward
         feature, legal_action, reward = self.preprocessor.feature_process(env_obs, self.last_action)
         remain_info = {"reward": reward}
         return (

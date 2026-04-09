@@ -87,10 +87,10 @@ class EpisodeRunner:
             if handle_disaster_recovery(env_obs, self.logger):
                 continue
             
-            # TODO: copy agent
             self.agent.reset(env_obs)
             self.agent.load_model(id="latest")
 
+            # TODO：重建obs_data
             obs_data, remain_info = self.agent.observation_process(env_obs)
 
             collector = []

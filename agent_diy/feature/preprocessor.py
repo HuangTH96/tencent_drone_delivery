@@ -32,13 +32,14 @@ def _get_pos_feature(found, cur_pos, target_pos, is_target=False):
     relative_pos = (target_pos[0] - cur_pos[0], target_pos[1] - cur_pos[1])
     dist = np.sqrt(relative_pos[0] ** 2 + relative_pos[1] ** 2)
     abs_norm = norm(np.array(target_pos), 128, -128)
+    # TODO： 都是归一化的距离是不是在数值上不容易区分？改成和hero的距离？
     return np.array(
         [
-            float(found),
-            norm(relative_pos[0] / max(dist, 1e-4), 1, -1),
-            norm(relative_pos[1] / max(dist, 1e-4), 1, -1),
-            abs_norm[0],
-            abs_norm[1],
+            float(found),                                       # 
+            norm(relative_pos[0] / max(dist, 1e-4), 1, -1),     # 归一化的相对位置
+            norm(relative_pos[1] / max(dist, 1e-4), 1, -1),     # 归一化的相对位置
+            abs_norm[0],                                        # 归一化的目标位置
+            abs_norm[1],                                        # 归一化的目标位置
             norm(dist, 1.41 * 128),
             1.0 if is_target else 0.0,
         ]
@@ -72,6 +73,7 @@ class Preprocessor:
         # Entities / 实体
         self.stations = []
 
+    # TODO：修改可以获得的观测信息
     def _parse_obs(self, env_obs):
         """Parse essential fields from observation dict.
 
@@ -81,24 +83,25 @@ class Preprocessor:
         frame_state = obs["frame_state"]
 
         hero = frame_state["heroes"]
-        self.cur_pos = (hero["pos"]["x"], hero["pos"]["z"])
+        self.cur_pos = (hero["pos"]["x"], hero["pos"]["z"])     # ego位置
 
-        self.battery = hero.get("battery", self.battery_max)
-        self.battery_max = hero.get("battery_max", 100)
-        self.packages = hero.get("packages", [])
+        self.battery = hero.get("battery", self.battery_max)    # ego当前电量
+        self.battery_max = hero.get("battery_max", 100)         # ego最大电量
+        self.packages = hero.get("packages", [])                # 需要投递的驿站编号
 
-        self.last_delivered = self.delivered
-        self.delivered = hero.get("delivered", 0)
-        self.step_no = obs.get("step_no", 0)
+        self.last_delivered = self.delivered                    # 已经投递的包裹数目
+        self.delivered = hero.get("delivered", 0)               # 已经投递的包裹数目
+        self.step_no = obs.get("step_no", 0)                    # 当前已经走了几步  
 
-        self.stations = []
+        self.stations = []                                      # 记录全局驿站
         for organ in frame_state.get("organs", []):
             st = organ.get("sub_type", 0)
             if st == 3:
                 self.stations.append(organ)
 
-        self.legal_act = obs.get("legal_action", [1] * 8)
+        self.legal_act = obs.get("legal_action", [1] * 8)       # 合法动作
 
+    # TODO
     def feature_process(self, env_obs, last_action):
         """Core feature extraction. Returns (feature_22d, legal_action, reward).
 
@@ -119,6 +122,9 @@ class Preprocessor:
             ]
         )
 
+        # TODO: 
+        # == 1. 优先去包裹多的驿站，以获取最大奖励；
+        # == 2. 如果分散在不同驿站，则按照优先级，依次前往各个驿站 TODO：优先级？
         # 2. Nearest 1 station feature (7D) / 最近 1 个驿站特征（7D）
         # Target stations first, then by distance
         # 目标驿站优先，然后按距离排序
@@ -144,6 +150,27 @@ class Preprocessor:
         else:
             station_feat = _get_pos_feature(False, self.cur_pos, self.cur_pos, is_target=False)
             target_visible = 0.0
+
+        # TODO： 添加充电站信息
+        # == 1. 归一化位置，归一化距离、优先级 TODO：优先级？
+
+
+
+
+        # TODO： 添加仓库信息
+
+
+
+
+
+
+        # TODO：添加NPC信息
+        # == 1. 归一化的位置、归一化距离、TODO：威胁等级
+
+
+
+
+
 
         # 3. Legal action mask (8D) / 合法动作掩码（8D）
         legal_action = self._get_legal_action()
@@ -182,6 +209,11 @@ class Preprocessor:
 
         return legal_action
 
+    # TODO：增加奖励/惩罚
+    # == 1. 惩罚被NPC抓到
+    # == 2. 奖励有包裹单低电量时成功充电
+    # == 3. 奖励无包裹时返回仓库
+    # == 4. 奖励有包裹时靠近驿站
     def _reward_process(self):
         """Reward function.
 

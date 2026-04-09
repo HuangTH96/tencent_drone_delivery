@@ -58,6 +58,8 @@ from agent_diy.conf.conf import Config
 #     """
 #     pass
 
+
+
 # ===================================== #
 # ObsData: feature vector + legal action mask
 # 观测数据：feature 为特征向量，legal_action 为合法动作掩码
@@ -69,6 +71,7 @@ ActData = create_cls("ActData", action=None, d_action=None, prob=None, value=Non
 
 # SampleData: int values are treated as dimensions by the framework
 # 样本数据：字段值为 int 时框架自动按维度处理
+# TODO：根据feature更改SampleData
 SampleData = create_cls(
     "SampleData",
     obs=Config.DIM_OF_OBSERVATION,
@@ -82,7 +85,6 @@ SampleData = create_cls(
     prob=Config.ACTION_NUM,
     reward_sum=Config.VALUE_NUM,
 )
-
 
 def sample_process(list_sample_data):
     """Sample post-processing: fill next_value and compute GAE advantage.
