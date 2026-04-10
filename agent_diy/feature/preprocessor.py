@@ -32,7 +32,6 @@ def _get_pos_feature(found, cur_pos, target_pos, is_target=False):
     relative_pos = (target_pos[0] - cur_pos[0], target_pos[1] - cur_pos[1])
     dist = np.sqrt(relative_pos[0] ** 2 + relative_pos[1] ** 2)
     abs_norm = norm(np.array(target_pos), 128, -128)
-    # TODO： 都是归一化的距离是不是在数值上不容易区分？改成和hero的距离？
     return np.array(
         [
             float(found),                                       # 
@@ -89,8 +88,8 @@ class Preprocessor:
         self.battery_max = hero.get("battery_max", 100)         # ego最大电量
         self.packages = hero.get("packages", [])                # 需要投递的驿站编号
 
-        self.last_delivered = self.delivered                    # 已经投递的包裹数目
-        self.delivered = hero.get("delivered", 0)               # 已经投递的包裹数目
+        self.last_delivered = self.delivered                    # 从开始到前一步的累计投递数目
+        self.delivered = hero.get("delivered", 0)               # 从开始到当前这一步已经投递的包裹数目
         self.step_no = obs.get("step_no", 0)                    # 当前已经走了几步  
 
         self.stations = []                                      # 记录全局驿站
@@ -122,71 +121,86 @@ class Preprocessor:
             ]
         )
 
-        # TODO: 
-        # == 1. 优先去包裹多的驿站，以获取最大奖励；
-        # == 2. 如果分散在不同驿站，则按照优先级，依次前往各个驿站 TODO：优先级？
-        # 2. Nearest 1 station feature (7D) / 最近 1 个驿站特征（7D）
-        # Target stations first, then by distance
-        # 目标驿站优先，然后按距离排序
-        target_ids = set(self.packages)
+        # TODO: 更新驿站特征
+        # == 语义信息：1. 与hero之间的相对距离、hero携带的，与该驿站相关的包裹数
+        # == 其他说明：1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；2. 按config_id排序填充每个驿站的特征
+        # == exist, dir_x, dir_z, norm_boundary_dist, norm_pkg_num,  # 驿站1
+        # == exist, dir_x, dir_z, norm_boundary_dist, norm_pkg_num,  # 驿站2   
+        # == exist, dir_x, dir_z, norm_boundary_dist, norm_pkg_num,  # 驿站3
 
-        def station_sort_key(s):
-            is_tgt = s.get("config_id", 0) in target_ids
-            dist = np.sqrt((s["pos"]["x"] - self.cur_pos[0]) ** 2 + (s["pos"]["z"] - self.cur_pos[1]) ** 2)
-            return (0 if is_tgt else 1, dist)
+        # target_ids = set(self.packages)
 
-        sorted_stations = sorted(self.stations, key=station_sort_key)
+        # def station_sort_key(s):
+        #     is_tgt = s.get("config_id", 0) in target_ids
+        #     dist = np.sqrt((s["pos"]["x"] - self.cur_pos[0]) ** 2 + (s["pos"]["z"] - self.cur_pos[1]) ** 2)
+        #     return (0 if is_tgt else 1, dist)
 
-        if len(sorted_stations) > 0:
-            s = sorted_stations[0]
-            is_target = s.get("config_id", 0) in target_ids
-            station_feat = _get_pos_feature(
-                True,
-                self.cur_pos,
-                (s["pos"]["x"], s["pos"]["z"]),
-                is_target=is_target,
-            )
-            target_visible = float(is_target)
-        else:
-            station_feat = _get_pos_feature(False, self.cur_pos, self.cur_pos, is_target=False)
-            target_visible = 0.0
+        # sorted_stations = sorted(self.stations, key=station_sort_key)
 
-        # TODO： 添加充电站信息
-        # == 1. 归一化位置，归一化距离、优先级 TODO：优先级？
+        # if len(sorted_stations) > 0:
+        #     s = sorted_stations[0]
+        #     is_target = s.get("config_id", 0) in target_ids
+        #     station_feat = _get_pos_feature(
+        #         True,
+        #         self.cur_pos,
+        #         (s["pos"]["x"], s["pos"]["z"]),
+        #         is_target=is_target,
+        #     )
+        #     target_visible = float(is_target)
+        # else:
+        #     station_feat = _get_pos_feature(False, self.cur_pos, self.cur_pos, is_target=False)
+        #     target_visible = 0.0
 
 
+        station_feat = None
+        # TODO： 添加充电站特征
+        # == 语义信息：1. 添加所有充电桩（4个），记录中心点与hero方向信息，计算边界到hero的距离信息
+        # == 其他说明：1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；2. 按config_id排序填充每个驿站的特征
+        # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩1
+        # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩2
+        # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩3
+        # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩4
+
+
+        charger_feat = None
 
 
         # TODO： 添加仓库信息
+        # == 语义信息：1. 计算中心点与hero的相对位置，计算边界到hero的距离
+        # == 其他说明：1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；
+        # == warehouse_dir_x, warehouse_dir_z, norm_boundary_dist
 
 
-
+        warehouse_feat = None
 
 
 
         # TODO：添加NPC信息
-        # == 1. 归一化的位置、归一化距离、TODO：威胁等级
+        # == 语义信息：1. 计算NPCs 和 hero之间的方向信息和以及归一化的距离信息
+        # == 其他说明：1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；2. 按config_id排序填充每个驿站的特征
+        # == exist, dir_x, dir_z, norm_dist_scalar,  # NPC1
+        # == exist, dir_x, dir_z, norm_dist_scalar,  # NPC2
+        # == exist, dir_x, dir_z, norm_dist_scalar,  # NPC3
+        # == exist, dir_x, dir_z, norm_dist_scalar,  # NPC4
 
 
 
 
-
+        npc_feat = None
 
         # 3. Legal action mask (8D) / 合法动作掩码（8D）
         legal_action = self._get_legal_action()
 
-        # 4. Binary indicators (3D) / 二值指示器（3D）
-        has_package = 1.0 if len(self.packages) > 0 else 0.0
-        battery_low = 1.0 if (self.battery / max(self.battery_max, 1)) < 0.3 else 0.0
-        indicators = np.array([has_package, battery_low, target_visible])
 
         # Concatenate features (Total 22D / 合计 22D)
         feature = np.concatenate(
             [
                 hero_feat,
                 station_feat,
+                charger_feat,
+                warehouse_feat,
+                npc_feat,
                 np.array(legal_action, dtype=float),
-                indicators,
             ]
         )
 
