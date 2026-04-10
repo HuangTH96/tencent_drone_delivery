@@ -23,27 +23,14 @@ def norm(v, max_v, min_v=0):
     v = np.clip(v, min_v, max_v)
     return (v - min_v) / (max_v - min_v)
 
-
-def _get_pos_feature(found, cur_pos, target_pos, is_target=False):
-    """Compute 7D position feature for a target relative to current position.
-
-    计算目标位置相对于当前位置的 7 维特征。
-    """
-    relative_pos = (target_pos[0] - cur_pos[0], target_pos[1] - cur_pos[1])
+def _get_target_feature(hero_pos, target_pos):
+    relative_pos = (target_pos[0] - hero_pos[0], target_pos[1] - hero_pos[1])
     dist = np.sqrt(relative_pos[0] ** 2 + relative_pos[1] ** 2)
-    abs_norm = norm(np.array(target_pos), 128, -128)
-    return np.array(
-        [
-            float(found),                                       # 
-            norm(relative_pos[0] / max(dist, 1e-4), 1, -1),     # 归一化的相对位置
-            norm(relative_pos[1] / max(dist, 1e-4), 1, -1),     # 归一化的相对位置
-            abs_norm[0],                                        # 归一化的目标位置
-            abs_norm[1],                                        # 归一化的目标位置
-            norm(dist, 1.41 * 128),
-            1.0 if is_target else 0.0,
-        ]
-    )
+    dir_x = relative_pos[0] / max(dist, 1e-4)   # [-1, 1]
+    dir_z = relative_pos[1] / max(dist, 1e-4)   # [-1, 1]
+    norm_dist = norm(dist, 1.41 * 128)           # [0, 1]
 
+    return dir_x, dir_z, norm_dist
 
 class Preprocessor:
     """feature preprocessor for Drone Delivery.
@@ -86,7 +73,7 @@ class Preprocessor:
 
         self.battery = hero.get("battery", self.battery_max)    # ego当前电量
         self.battery_max = hero.get("battery_max", 100)         # ego最大电量
-        self.packages = hero.get("packages", [])                # 需要投递的驿站编号
+        self.packages = hero.get("packages", [])                # 目前需要去投递的包裹（驿站）编号
 
         self.last_delivered = self.delivered                    # 从开始到前一步的累计投递数目
         self.delivered = hero.get("delivered", 0)               # 从开始到当前这一步已经投递的包裹数目
@@ -121,38 +108,45 @@ class Preprocessor:
             ]
         )
 
-        # TODO: 更新驿站特征
+        # 更新驿站特征
         # == 语义信息：1. 与hero之间的相对距离、hero携带的，与该驿站相关的包裹数
-        # == 其他说明：1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；2. 按config_id排序填充每个驿站的特征
-        # == exist, dir_x, dir_z, norm_boundary_dist, norm_pkg_num,  # 驿站1
-        # == exist, dir_x, dir_z, norm_boundary_dist, norm_pkg_num,  # 驿站2   
-        # == exist, dir_x, dir_z, norm_boundary_dist, norm_pkg_num,  # 驿站3
+        # == exist, dir_x, dir_z, norm_center_dist, norm_pkg_num,  # 驿站1-10
+        # == 其他说明：
+        # 1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；
+        # 2. 按config_id排序填充每个驿站的特征
+        # 3. 投递后会自动删除该包裹，比如一开始是[3,6,9]，当投递6后，self.packages会变成 [3,9]；也就是说，驿站的个数会变化
+        
+        TOTAL_STATIONS = 10
+        STATION_FEAT_DIM = 5  
 
-        # target_ids = set(self.packages)
+        # 统计每个目标驿站对应的包裹数
+        # self.packages 是 list[int]，元素为驿站编号，同一驿站可能出现多次；
+        pkg_count = {}  # config_id -> 包裹数
+        for pkg_id in self.packages:
+            pkg_count[pkg_id] = pkg_count.get(pkg_id, 0) + 1
 
-        # def station_sort_key(s):
-        #     is_tgt = s.get("config_id", 0) in target_ids
-        #     dist = np.sqrt((s["pos"]["x"] - self.cur_pos[0]) ** 2 + (s["pos"]["z"] - self.cur_pos[1]) ** 2)
-        #     return (0 if is_tgt else 1, dist)
+        # 提取所有驿站的信息
+        station_map = {s.get("config_id"): s for s in self.stations} # -> dict{int32:Organstate}
 
-        # sorted_stations = sorted(self.stations, key=station_sort_key)
+        # 遍历所有驿站（按config_id固定排序）
+        station_feat_list = []
+        for station in sorted(self.stations, key=lambda x:x.get("config_id", 0)):
+            sid = station.get("config_id", 0)   # -> OrganState
+            pkg_num = pkg_count.get(sid, 0)
+            exist = 1.0 if pkg_num > 0 else 0.0
+            if exist:
+                target_pos = (s["pos"]["x"], s["pos"]["z"])
+                dir_x, dir_z, norm_dist = _get_target_feature(self.cur_pos, target_pos)
+                norm_pkg_num = pkg_count[sid] / 3.0          # [0, 1]
+            else:
+                dir_x, dir_z, norm_dist, norm_pkg_num = 0.0, 0.0, 0.0, 0.0
 
-        # if len(sorted_stations) > 0:
-        #     s = sorted_stations[0]
-        #     is_target = s.get("config_id", 0) in target_ids
-        #     station_feat = _get_pos_feature(
-        #         True,
-        #         self.cur_pos,
-        #         (s["pos"]["x"], s["pos"]["z"]),
-        #         is_target=is_target,
-        #     )
-        #     target_visible = float(is_target)
-        # else:
-        #     station_feat = _get_pos_feature(False, self.cur_pos, self.cur_pos, is_target=False)
-        #     target_visible = 0.0
+            station_feat_list.append(np.array([exist, dir_x, dir_z, norm_dist, norm_pkg_num]))
 
+        station_feat = np.concatenate(station_feat_list)  # 50D
+        assert len(station_feat) == MAX_TARGET_STATIONS * STATION_FEAT_DIM, \
+            f"station_feat dim error: expected {MAX_TARGET_STATIONS * STATION_FEAT_DIM}, got {len(station_feat)}"
 
-        station_feat = None
         # TODO： 添加充电站特征
         # == 语义信息：1. 添加所有充电桩（4个），记录中心点与hero方向信息，计算边界到hero的距离信息
         # == 其他说明：1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；2. 按config_id排序填充每个驿站的特征
@@ -160,6 +154,7 @@ class Preprocessor:
         # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩2
         # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩3
         # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩4
+        # 充电桩尺寸 3 * 3
 
 
         charger_feat = None
