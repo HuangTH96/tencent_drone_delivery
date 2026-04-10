@@ -80,10 +80,16 @@ class Preprocessor:
         self.step_no = obs.get("step_no", 0)                    # 当前已经走了几步  
 
         self.stations = []                                      # 记录全局驿站
+        self.chargers = []                                      # 记录全局充电站
+        self.warehouse = None                                   # 记录仓库    
         for organ in frame_state.get("organs", []):
             st = organ.get("sub_type", 0)
             if st == 3:
                 self.stations.append(organ)
+            elif st == 2:
+                self.chargers.append(organ)
+            else
+                self.warehouse = organ
 
         self.legal_act = obs.get("legal_action", [1] * 8)       # 合法动作
 
@@ -133,15 +139,16 @@ class Preprocessor:
         for station in sorted(self.stations, key=lambda x:x.get("config_id", 0)):
             sid = station.get("config_id", 0)   # -> OrganState
             pkg_num = pkg_count.get(sid, 0)
+            # 根据有无包裹判断是否需要对该驿站的特征进行补零操作
             exist = 1.0 if pkg_num > 0 else 0.0
             if exist:
-                target_pos = (s["pos"]["x"], s["pos"]["z"])
-                dir_x, dir_z, norm_dist = _get_target_feature(self.cur_pos, target_pos)
+                target_pos_s = (station["pos"]["x"], station["pos"]["z"])
+                dir_x_s, dir_z_s, norm_dist_s = _get_target_feature(self.cur_pos, target_pos_s)
                 norm_pkg_num = pkg_count[sid] / 3.0          # [0, 1]
             else:
-                dir_x, dir_z, norm_dist, norm_pkg_num = 0.0, 0.0, 0.0, 0.0
+                dir_x_s, dir_z, norm_dist_z, norm_pkg_num = 0.0, 0.0, 0.0, 0.0
 
-            station_feat_list.append(np.array([exist, dir_x, dir_z, norm_dist, norm_pkg_num]))
+            station_feat_list.append(np.array([exist, dir_x_s, dir_z_s, norm_dist_s, norm_pkg_num]))
 
         station_feat = np.concatenate(station_feat_list)  # 50D
         assert len(station_feat) == MAX_TARGET_STATIONS * STATION_FEAT_DIM, \
@@ -149,16 +156,25 @@ class Preprocessor:
 
         # TODO： 添加充电站特征
         # == 语义信息：1. 添加所有充电桩（4个），记录中心点与hero方向信息，计算边界到hero的距离信息
-        # == 其他说明：1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；2. 按config_id排序填充每个驿站的特征
+        # == 其他说明：1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；2. 不能按config_id排序填充每个驿站的特征，
+        # == 因为充电站的config_id是索引，所以同一个充电站，在不同帧时的config_id可能不一样，无法想驿站一样简单地通过sort排序
         # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩1
         # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩2
         # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩3
         # == exist, dir_x, dir_z, norm_boundary_dist,  # 充电桩4
         # 充电桩尺寸 3 * 3
 
+        charger_map = {c.get("config_id"): c for c in self.chargers}
 
-        charger_feat = None
-
+        charger_feat_list = []
+        # TODO：遍历所有充电站，按什么顺序填充到charger_feat_list中呢？肯定不能像驿站那样sort config_id
+        # Solution 1：对充电站的position直接sort
+        # Solution 2: 用sin函数对position进行编码，类似于Transformer中的位置编码，将这个位置编码作为charger_id
+        for c in sorted(self.chargers, key=lambda x:(x["pos"]["x"], x["pos"]["z"]):
+            # TODO：充电桩应该不需要exist吧，毕竟不用补零，一直存在啊
+            target_pos_c = (charger["pos"]["x"], charger["pos"]["z"])
+            dir_x_c, dir_z_c, norm_dist_c = _get_target_feature(self.cur_pos, target_pos_c)
+            charger_feat_list.append(np.array([dir_x_c, dir_z_c, norm_dist_c]))
 
         # TODO： 添加仓库信息
         # == 语义信息：1. 计算中心点与hero的相对位置，计算边界到hero的距离
