@@ -4,7 +4,7 @@
 # Copyright © 1998 - 2026 Tencent. All Rights Reserved.
 ###########################################################################
 """
-Author: Tencent AI Arena Authors
+Author: Huang Tianhao
 
 Drone Delivery feature preprocessor.
 智运无人机特征预处理器。
@@ -48,9 +48,15 @@ class Preprocessor:
         """
         self.cur_pos = (0, 0)
 
+        # reward 相关
+        self.prev_pos = (0, 0)
+        self.prev_dist_to_target = None                         
+        self.prev_battery = None
+        self.prev_packages_count = -1
+
         # Game state / 游戏状态
-        self.battery = 100
-        self.battery_max = 100
+        self.battery = None
+        self.battery_max = None
         self.packages = []
         self.delivered = 0
         self.last_delivered = 0
@@ -72,11 +78,15 @@ class Preprocessor:
         frame_state = obs["frame_state"]
 
         hero = frame_state["heroes"]
-        self.cur_pos = (hero["pos"]["x"], hero["pos"]["z"])     # ego位置
-
+        self.prev_pos = self.cur_pos                            # 记录前一刻ego位置， 为了惩罚原地不动
+        self.cur_pos = (hero["pos"]["x"], hero["pos"]["z"])     # 当前ego位置
+        
+        self.prev_battery = self.battery                        # 记录前一刻电量，为了鼓励低电量时靠近充电站
         self.battery = hero.get("battery", self.battery_max)    # ego当前电量
-        self.battery_max = hero.get("battery_max", 100)         # ego最大电量
-        self.packages = hero.get("packages", [])                # 目前需要去投递的包裹（驿站）编号
+        self.battery_max = hero.get("battery_max", 300)         # ego最大电量
+
+        self.prev_packages_count = len(self.packages)           # 保存前一时刻代投的包裹数目
+        self.packages = hero.get("packages", [])                # 目前需要去投递的包裹（驿站）
 
         self.last_delivered = self.delivered                    # 从开始到前一步的累计投递数目
         self.delivered = hero.get("delivered", 0)               # 从开始到当前这一步已经投递的包裹数目
@@ -222,7 +232,7 @@ class Preprocessor:
         legal_action = self._get_legal_action()
 
 
-        # Concatenate features (Total 22D / 合计 22D)
+        # Concatenate features (Total 93D)
         feature = np.concatenate(
             [
                 hero_feat,
@@ -261,7 +271,16 @@ class Preprocessor:
     def _reward_process(self):
         """Reward function.
 
-        奖励函数。
+        - 成功投递一个包裹：1
+        - 地图大小：128 * 128 个单位
+        - 离开仓库，不充电的情况下，单趟投递行为限制步数：300，每步移动一个单位
+        - 步数惩罚：0.001
+        - 惩罚原地不动：0.01
+        - 靠近npc： -0.1
+        - 被NPC抓获：-5
+        - 靠近最近的驿站： 0.002
+        - 鼓励低电量去充电： 0.3
+        - 奖励投完后补充包裹：0.3
         """
         reward = 0.0
 
@@ -272,5 +291,61 @@ class Preprocessor:
 
         # 2. Step penalty / 步数惩罚
         reward -= 0.001
+
+        # 3. 惩罚原地不动
+        if self.cur_pos == self.prev_pos:
+            reward -= 0.01
+
+        # 4. 惩罚接近NPC，以及被抓获
+        if self.npcs:
+            min_npc_dist = min(
+                np.sqrt((npc["pos"]["x"] - self.cur_pos[0])**2 + 
+                        (npc["pos"]["z"] - self.cur_pos[1])**2)
+                for npc in self.npcs
+            )
+            
+            # 被抓获（距离<=1格，任务终止）
+            if min_npc_dist <= 1:
+                reward -= 5.0
+            # 接近NPC预警（距离<=5格）
+            elif min_npc_dist <= 5:
+                reward -= 0.1 * (5 - min_npc_dist)  # 越近惩罚越大，范围[0.1, 0.4]
+
+        # 5. 奖励有包裹时，靠近当前携带包裹对应的驿站中距离最近的那个
+        if self.packages and self.stations:
+            # 找当前携带包裹对应的驿站中距离最近的
+            station_map = {s.get("config_id"): s for s in self.stations}
+            pkg_ids = set(self.packages)
+            
+            min_dist = float('inf')
+            for sid in pkg_ids:
+                s = station_map.get(sid)
+                if s is not None:
+                    dist = np.sqrt((s["pos"]["x"] - self.cur_pos[0])**2 +
+                                (s["pos"]["z"] - self.cur_pos[1])**2)
+                    if dist < min_dist:
+                        min_dist = dist
+            
+            if self.prev_dist_to_target is not None:
+                dist_delta = self.prev_dist_to_target - min_dist
+                if dist_delta > 0:
+                    reward += 0.002 * dist_delta  # 只奖励靠近，不惩罚远离
+            self.prev_dist_to_target = min_dist
+
+        else:
+            self.prev_dist_to_target = None
+
+
+        # 6. 鼓励低电量是及时充电
+        if self.prev_battery is not None:
+            prev_battery_ratio = self.prev_battery / max(self.battery_max, 1)
+            if self.battery == self.battery_max and prev_battery_ratio < 0.3:
+                reward += 0.3
+
+        # 7. 仓库奖励，奖励无包裹时返回仓库补充
+        if self.prev_packages_count >= 0:    # 跳过第一步，此时prev_package_count为-1
+            # 奖励在没有包裹的情况下，回到仓库又装好了
+            if self.prev_packages_count == 0 and len(self.packages) == 3:
+                reward += 0.3
 
         return [reward]
