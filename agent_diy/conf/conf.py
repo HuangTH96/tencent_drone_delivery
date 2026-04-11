@@ -44,20 +44,24 @@ class Config:
 
     # =========================================================== #
     # Feature dimensions / 特征维度
-    HERO_STATE_DIM = 4
-    STATION_DIM = 7 * 1
+    HERO_FEAT_DIM = 4
+    TOTAL_STATIONS = 10
+    STATION_FEAT_DIM = 5
+    TOTAL_CHARGERS = 4
+    CHARGER_FEAT_DIM = 3
+    WAREHOUSE_FEAT_DIM = 3
+    TOTAL_NPCS = 4
+    NPC_FEAT_DIM = 4
     LEGAL_ACT_DIM = 8
-    INDICATOR_DIM = 3
 
-    FEATURES = [
-        HERO_STATE_DIM,
-        STATION_DIM,
-        LEGAL_ACT_DIM,
-        INDICATOR_DIM,
-    ]
-    FEATURE_SPLIT_SHAPE = FEATURES
-    FEATURE_LEN = sum(FEATURES)
-    DIM_OF_OBSERVATION = FEATURE_LEN
+    DIM_OF_OBSERVATION = (
+        HERO_FEAT_DIM +                             # 4
+        TOTAL_STATIONS * STATION_FEAT_DIM +         # 50
+        TOTAL_CHARGERS * CHARGER_FEAT_DIM +         # 12
+        WAREHOUSE_FEAT_DIM +                        # 3
+        TOTAL_NPCS * NPC_FEAT_DIM +                 # 16
+        LEGAL_ACT_DIM                               # 8
+    )   # 93
 
     # Action space / 动作空间
     ACTION_NUM = 8

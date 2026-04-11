@@ -107,7 +107,6 @@ class Preprocessor:
         self.npcs =frame_state["npcs"]                          # list of NPCs -> list[NpcState]
         self.legal_act = obs.get("legal_action", [1] * 8)       # 合法动作
 
-    # TODO
     def feature_process(self, env_obs, last_action):
         """Core feature extraction. Returns (feature_22d, legal_action, reward).
 
@@ -135,14 +134,6 @@ class Preprocessor:
         # 1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；
         # 2. 按config_id排序填充每个驿站的特征
         # 3. 投递后会自动删除该包裹，比如一开始是[3,6,9]，当投递6后，self.packages会变成 [3,9]；也就是说，驿站的个数会变化
-        
-        # TODO: 常量移动至conf.py 中
-        TOTAL_STATIONS = 10
-        STATION_FEAT_DIM = 5  
-        TOTAL_CHARGERS = 4
-        CHARGER_FEAT_DIM = 3
-        TOTAL_NPCs = 4
-        NPC_FEAT_DIM = 4
 
         # 统计每个目标驿站对应的包裹数
         # self.packages 是 list[int]，元素为驿站编号，同一驿站可能出现多次；
@@ -155,7 +146,7 @@ class Preprocessor:
         # 遍历所有驿站（按config_id固定排序）
         station_feat_list = []
 
-        for sid in range(1, TOTAL_STATIONS + 1): # sorted(self.stations, key=lambda x:x.get("config_id", 0)):
+        for sid in range(1, Config.TOTAL_STATIONS + 1): 
             station = station_map.get(sid)   # -> OrganState
 
             if station is not None:
@@ -175,8 +166,8 @@ class Preprocessor:
             station_feat_list.append(np.array([exist, dir_x_s, dir_z_s, norm_dist_s, norm_pkg_num]))
 
         station_feat = np.concatenate(station_feat_list)  # 50D
-        assert len(station_feat) == TOTAL_STATIONS * STATION_FEAT_DIM, \
-            f"station_feat dim error: expected {TOTAL_STATIONS * STATION_FEAT_DIM}, got {len(station_feat)}"
+        assert len(station_feat) == Config.TOTAL_STATIONS * Config.STATION_FEAT_DIM, \
+            f"station_feat dim error: expected {Config.TOTAL_STATIONS * Config.STATION_FEAT_DIM}, got {len(station_feat)}"
 
         # 添加充电站特征
         # == 语义信息：1. 添加所有充电桩（4个），记录中心点与hero方向信息，计算边界到hero的距离信息
@@ -184,18 +175,18 @@ class Preprocessor:
         # == 其他说明：1. 在特征向量中固定槽位，明确“哪个特征属于哪个实体”；2. 按config_id排序填充每个驿站的特征; 3. TODO: 充电桩有充电范围，不应该以充电桩位置为target_pos_c
         charger_feat_list = []  
         sorted_chargers = sorted(self.chargers, key=lambda x:x.get("config_id", 0))
-        for i in range(TOTAL_CHARGERS):
+        for i in range(Config.TOTAL_CHARGERS):
             if i < len(sorted_chargers):
                 c = sorted_chargers[i]
                 target_pos_c = (c["pos"]["x"], c["pos"]["z"])
                 dir_x_c, dir_z_c, norm_dist_c = _get_target_feature(self.cur_pos, target_pos_c)
                 charger_feat_list.append(np.array([dir_x_c, dir_z_c, norm_dist_c]))
             else:
-                charger_feat_list.append(np.zeros(CHARGER_FEAT_DIM))
+                charger_feat_list.append(np.zeros(Config.CHARGER_FEAT_DIM))
 
         charger_feat = np.concatenate(charger_feat_list)    # 12D
-        assert len(charger_feat) == TOTAL_CHARGERS * CHARGER_FEAT_DIM, \
-            f"charger_feat dim error: expected {TOTAL_CHARGERS * CHARGER_FEAT_DIM}, got {len(charger_feat)}"
+        assert len(charger_feat) == Config.TOTAL_CHARGERS * Config.CHARGER_FEAT_DIM, \
+            f"charger_feat dim error: expected {Config.TOTAL_CHARGERS * Config.CHARGER_FEAT_DIM}, got {len(charger_feat)}"
 
         # 添加仓库信息
         # == 语义信息：1. 计算中心点与hero的相对位置，计算边界到hero的距离
@@ -212,7 +203,7 @@ class Preprocessor:
         # == exist, dir_x, dir_z, norm_dist_scalar,  # NPC
         npc_feat_list = []
         sorted_npcs = sorted(self.npcs, key=lambda x:x.get("npc_id", ""))
-        for i in range(TOTAL_NPCs):
+        for i in range(Config.TOTAL_NPCS):
             if i < len(sorted_npcs):
                 npc =sorted_npcs[i]
                 target_pos_npc = (npc["pos"]["x"], npc["pos"]["z"])
@@ -225,12 +216,11 @@ class Preprocessor:
             npc_feat_list.append(np.array([exist, dir_x_npc, dir_z_npc, norm_dist_npc]))
         
         npc_feat = np.concatenate(npc_feat_list)    # 16D
-        assert len(npc_feat) == TOTAL_NPCs * NPC_FEAT_DIM, \
-            f"npc_feat dim error: expected {TOTAL_NPCs * NPC_FEAT_DIM}, got {len(npc_feat)}"
+        assert len(npc_feat) == Config.TOTAL_NPCS * Config.NPC_FEAT_DIM, \
+            f"npc_feat dim error: expected {Config.TOTAL_NPCS * Config.NPC_FEAT_DIM}, got {len(npc_feat)}"
 
         # 3. Legal action mask (8D) / 合法动作掩码（8D）
         legal_action = self._get_legal_action()
-
 
         # Concatenate features (Total 93D)
         feature = np.concatenate(
@@ -243,9 +233,7 @@ class Preprocessor:
                 np.array(legal_action, dtype=float),
             ]
         )
-
         reward = self._reward_process()
-
         return feature, legal_action, reward
 
     def _get_legal_action(self):
@@ -263,11 +251,7 @@ class Preprocessor:
 
         return legal_action
 
-    # TODO：增加奖励/惩罚
-    # == 1. 惩罚被NPC抓到
-    # == 2. 奖励有包裹单低电量时成功充电
-    # == 3. 奖励无包裹时返回仓库
-    # == 4. 奖励有包裹时靠近驿站
+    # 增加奖励/惩罚
     def _reward_process(self):
         """Reward function.
 
