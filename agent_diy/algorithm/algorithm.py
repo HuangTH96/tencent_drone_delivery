@@ -36,7 +36,7 @@ import os
 import time
 
 import torch
-from agent_ppo.conf.conf import Config
+from agent_diy.conf.conf import Config
 
 
 class Algorithm:

@@ -13,7 +13,8 @@ from common_python.utils.common_func import Frame
 from agent_diy.feature.definition import (
     sample_process,
     # reward_shaping,
-    SampleData  
+    SampleData,
+    Config  
 )
 from tools.train_env_conf_validate import read_usr_conf
 from tools.metrics_utils import get_training_metrics
@@ -21,7 +22,6 @@ from common_python.utils.workflow_disaster_recovery import handle_disaster_recov
 
 import os
 import numpy as np
-from agent_diy.conf.conf import Config 
 
 
 def workflow(envs, agents, logger=None, monitor=None, *args, **kwargs):
@@ -136,11 +136,13 @@ class EpisodeRunner:
                         # Abnormal termination (collision or energy depleted): small penalty
                         # 异常终止（碰撞 or 电量耗尽）：给小惩罚
                         # TODO： 根据ExtraInfo中的result_message区分被NPC抓还是电量耗尽，给予不同的惩罚
-                        if env_obs["extra_info"]["result_message"] == "":
-                            final_reward[0] = -1.0
-                            result_str = "FAIL: out of battery"
-                        else:
-                            result_str = "FAIL: caught by npcs"
+                        # if env_obs["extra_info"]["result_message"] == "":
+                        #     final_reward[0] = -1.0
+                        #     result_str = "FAIL: out of battery"
+                        # else:
+                        #     result_str = "FAIL: caught by npcs"
+                        final_reward[0] = -1.0
+                        result_str = "FAIL"
                     else:
                         # Normal end: reached max steps
                         # 正常到达最大步数

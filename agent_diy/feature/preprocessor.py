@@ -12,7 +12,7 @@ Drone Delivery feature preprocessor.
 
 
 import numpy as np
-from agent_ppo.conf.conf import Config
+from agent_diy.conf.conf import Config
 
 
 def norm(v, max_v, min_v=0):
