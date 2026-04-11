@@ -135,8 +135,12 @@ class EpisodeRunner:
                     if terminated:
                         # Abnormal termination (collision or energy depleted): small penalty
                         # 异常终止（碰撞 or 电量耗尽）：给小惩罚
-                        final_reward[0] = -1.0
-                        result_str = "FAIL"
+                        # TODO： 根据ExtraInfo中的result_message区分被NPC抓还是电量耗尽，给予不同的惩罚
+                        if env_obs["extra_info"]["result_message"] == "":
+                            final_reward[0] = -1.0
+                            result_str = "FAIL: out of battery"
+                        else:
+                            result_str = "FAIL: caught by npcs"
                     else:
                         # Normal end: reached max steps
                         # 正常到达最大步数
