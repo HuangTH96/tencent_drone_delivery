@@ -86,15 +86,12 @@ class Model(nn.Module):
         self.model_name = "drone_delivery"
         self.device = device
 
-        feature_len = Config.FEATURE_LEN    # TODO
+        feature_len = Config.DIM_OF_OBSERVATION # 93
         action_num = Config.ACTION_NUM
         value_num = Config.VALUE_NUM
-        hidden_dim = 64
+        hidden_dim = 128
 
         # Backbone network / 主干网络
-        # TODO:
-        # == 1. 修改维度
-        # == 2. 加一个隐藏层
         self.backbone = MLP(
             [feature_len, hidden_dim, hidden_dim],
             "backbone",
