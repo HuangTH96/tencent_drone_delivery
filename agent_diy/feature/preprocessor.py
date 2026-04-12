@@ -310,10 +310,10 @@ class Preprocessor:
             )
             # 被抓获（距离<=1格，任务终止）
             if min_npc_dist <= 1:
-                reward -= 1.0
+                reward -= Config.CAUGHT
             # 接近NPC预警（距离<=5格）
-            # elif min_npc_dist <= 3:
-            #     reward -= 0.001 # * (3 - min_npc_dist)  # 越近惩罚越大，范围[0.1, 0.4]
+            elif min_npc_dist <= 5:
+                reward -= 0.02 * (5 - min_npc_dist)  # 越近惩罚越大
 
         # 5. 奖励有包裹时，靠近当前携带包裹对应的驿站中距离最近的那个
         if self.packages and self.stations:
