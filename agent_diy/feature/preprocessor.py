@@ -53,6 +53,8 @@ class Preprocessor:
         self.prev_dist_to_target = None                         
         self.prev_battery = None
         self.prev_packages_count = -1
+        self.prev_dist_to_charger = None
+        self.prev_dist_to_warehouse = None
 
         # Game state / 游戏状态
         self.battery = None
@@ -342,16 +344,43 @@ class Preprocessor:
         else:
             self.prev_dist_to_target = None
 
-        # 6. 鼓励低电量是及时充电
-        if self.prev_battery is not None:
-            prev_battery_ratio = self.prev_battery / max(self.battery_max, 1)
-            if self.battery == self.battery_max and prev_battery_ratio < 0.1:
-                reward += Config.RECHARGE
+        # 6. 鼓励低电量是及时充电：
+        # == 奖励成功充电： Config.RECHARGER = a * Config.DELIVERED
+        # == 小奖励靠近充电桩： Config.APPROACH_RECHARGER = b * Config.RECHARGER
+        battery_ratio = self.battery / max(self.battery_max, 1)
+        if battery_ratio < 0.2 and self.chargers:
+            # 找最近的充电桩
+            cur_charger_dist = min(
+                np.sqrt((c["pos"]["x"] - self.cur_pos[0])**2 + 
+                        (c["pos"]["z"] - self.cur_pos[1])**2)
+                for c in self.chargers
+            )
+
+            if self.prev_dist_to_charger is not None:
+                charger_delta = self.prev_dist_to_charger - cur_charger_dist
+                if charger_delta > 0:
+                    reward += Config.APPROACH_CHARGER * charger_delta   # 靠近充电站给奖励
+                else:
+                    reward += Config.LEAVE_CHARGER * charger_delta      # 远离给惩罚
+            self.prev_dist_to_charger = cur_charger_dist
+        else:
+            self.prev_dist_to_charger = None
 
         # 7. 仓库奖励，奖励无包裹时返回仓库补充
-        if self.prev_packages_count >= 0:    # 跳过第一步，此时prev_package_count为-1
-            # 奖励在没有包裹的情况下，回到仓库又装好了
-            if self.prev_packages_count == 0 and len(self.packages) == 3:
-                reward += Config.RESUPPLY
-
+        # == 奖励成功resupply: Config:RESUPPLY = c * Config.DELIVERED
+        # == 小奖励靠近仓库： Config.APPROACH_WAREHOUSE = d * Config.RESUPPLY
+        if not self.packages and self.warehouse:    # 没有包裹时才回仓库
+            wh_pos = (self.warehouse["pos"]["x"], self.warehouse["pos"]["z"])
+            cur_wh_dist = np.sqrt((wh_pos[0] - self.cur_pos[0])**2 + 
+                                (wh_pos[1] - self.cur_pos[1])**2)
+            
+            if self.prev_dist_to_warehouse is not None: # 已经在前往仓库的路上了
+                wh_delta = self.prev_dist_to_warehouse - cur_wh_dist
+                if wh_delta > 0:
+                    reward += Config.APPROACH_WAREHOUSE * wh_delta
+                else:
+                    reward += Config.LEAVE_WAREHOUSE * wh_delta
+            self.prev_dist_to_warehouse = cur_wh_dist
+        else:
+            self.prev_dist_to_warehouse = None
         return [reward]
