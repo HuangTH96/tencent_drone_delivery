@@ -302,19 +302,18 @@ class Preprocessor:
             reward -= Config.STATIONARY_PENALTY
 
         # 4. 惩罚接近NPC，以及被抓获
-        # if self.npcs:
-        #     min_npc_dist = min(
-        #         np.sqrt((npc["pos"]["x"] - self.cur_pos[0])**2 + 
-        #                 (npc["pos"]["z"] - self.cur_pos[1])**2)
-        #         for npc in self.npcs
-        #     )
-            
-        #     # 被抓获（距离<=1格，任务终止）
-        #     if min_npc_dist <= 1:
-        #         reward -= 1.0
-        #     # 接近NPC预警（距离<=5格）
-        #     elif min_npc_dist <= 3:
-        #         reward -= 0.01 # * (3 - min_npc_dist)  # 越近惩罚越大，范围[0.1, 0.4]
+        if self.npcs:
+            min_npc_dist = min(
+                np.sqrt((npc["pos"]["x"] - self.cur_pos[0])**2 + 
+                        (npc["pos"]["z"] - self.cur_pos[1])**2)
+                for npc in self.npcs
+            )
+            # 被抓获（距离<=1格，任务终止）
+            if min_npc_dist <= 1:
+                reward -= 1.0
+            # 接近NPC预警（距离<=5格）
+            # elif min_npc_dist <= 3:
+            #     reward -= 0.001 # * (3 - min_npc_dist)  # 越近惩罚越大，范围[0.1, 0.4]
 
         # 5. 奖励有包裹时，靠近当前携带包裹对应的驿站中距离最近的那个
         if self.packages and self.stations:
@@ -344,14 +343,15 @@ class Preprocessor:
             self.prev_dist_to_target = None
 
         # 6. 鼓励低电量是及时充电
-        # if self.prev_battery is not None:
-        #     prev_battery_ratio = self.prev_battery / max(self.battery_max, 1)
-        #     if self.battery == self.battery_max and prev_battery_ratio < 0.3:
-        #         reward += 0.00001
+        if self.prev_battery is not None:
+            prev_battery_ratio = self.prev_battery / max(self.battery_max, 1)
+            if self.battery == self.battery_max and prev_battery_ratio < 0.1:
+                reward += Config.RECHARGE
 
-        # # 7. 仓库奖励，奖励无包裹时返回仓库补充
-        # if self.prev_packages_count >= 0:    # 跳过第一步，此时prev_package_count为-1
-        #     # 奖励在没有包裹的情况下，回到仓库又装好了
-        #     if self.prev_packages_count == 0 and len(self.packages) == 3:
-        #         reward += 0.00001
+        # 7. 仓库奖励，奖励无包裹时返回仓库补充
+        if self.prev_packages_count >= 0:    # 跳过第一步，此时prev_package_count为-1
+            # 奖励在没有包裹的情况下，回到仓库又装好了
+            if self.prev_packages_count == 0 and len(self.packages) == 3:
+                reward += Config.RESUPPLY
+
         return [reward]

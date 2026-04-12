@@ -92,3 +92,5 @@ class Config:
     LEAVE_STATION = 0.005 * DELIVERED           # 防止刷分，所以惩罚力度大于奖励力度；考虑必要的绕路，所以惩罚力度远小于成功投递的力度
     STEP_PENALTY = 0.0001 * DELIVERED
     STATIONARY_PENALTY = 0.01 * DELIVERED
+    RECHARGE = 0.1 * DELIVERED
+    RESUPPLY = 0.1 * DELIVERED
