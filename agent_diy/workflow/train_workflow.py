@@ -122,7 +122,8 @@ class EpisodeRunner:
                 _obs_data, _remain_info = self.agent.observation_process(env_obs)
 
                 # Reward (from preprocessor, single channel) / 奖励（来自 preprocessor，单通道 list[float]）
-                reward = np.array(self.agent.preprocessor._reward_process(), dtype=np.float32)
+                # 已经在observation_process中call过一次了
+                reward = np.array(_remain_info["reward"], dtype=np.float32)
 
                 total_reward_sum += float(reward.sum())
 
