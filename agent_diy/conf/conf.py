@@ -45,7 +45,8 @@ class Config:
     # =========================================================== #
     # Feature dimensions / 特征维度
     HERO_FEAT_DIM = 4
-    TOTAL_STATIONS = 10
+    # TOTAL_STATIONS = 10
+    MAX_TARGET_STATIONS = 3
     STATION_FEAT_DIM = 5
     TOTAL_CHARGERS = 4
     CHARGER_FEAT_DIM = 3
@@ -56,7 +57,8 @@ class Config:
 
     DIM_OF_OBSERVATION = (
         HERO_FEAT_DIM +                             # 4
-        TOTAL_STATIONS * STATION_FEAT_DIM +         # 50
+        # TOTAL_STATIONS * STATION_FEAT_DIM +         # 50
+        MAX_TARGET_STATIONS * STATION_FEAT_DIM +    # 3                    
         TOTAL_CHARGERS * CHARGER_FEAT_DIM +         # 12
         WAREHOUSE_FEAT_DIM +                        # 3
         TOTAL_NPCS * NPC_FEAT_DIM +                 # 16

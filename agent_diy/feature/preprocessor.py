@@ -141,33 +141,54 @@ class Preprocessor:
         for pkg_id in self.packages:
             pkg_count[pkg_id] = pkg_count.get(pkg_id, 0) + 1
 
-        station_map = {s.get("config_id"): s for s in self.stations}
+        # station_map = {s.get("config_id"): s for s in self.stations}
 
         # 遍历所有驿站（按config_id固定排序）
-        station_feat_list = []
+        # station_feat_list = []
 
-        for sid in range(1, Config.TOTAL_STATIONS + 1): 
-            station = station_map.get(sid)   # -> OrganState
+        # for sid in range(1, Config.TOTAL_STATIONS + 1): 
+        #     station = station_map.get(sid)   # -> OrganState
 
-            if station is not None:
-                pkg_num = pkg_count.get(sid, 0)
-                # 根据有无包裹判断是否需要对该驿站的特征进行补零操作
-                exist = 1.0 if pkg_num > 0 else 0.0
-                if exist == 1.0:
-                    target_pos_s = (station["pos"]["x"], station["pos"]["z"])
-                    dir_x_s, dir_z_s, norm_dist_s = _get_target_feature(self.cur_pos, target_pos_s)
-                    norm_pkg_num = pkg_count[sid] / 3.0          # [0, 1]
-                else:
-                    dir_x_s, dir_z_s, norm_dist_s, norm_pkg_num = 0.0, 0.0, 0.0, 0.0
-            else: 
-                # 对本局没有的驿站进行补零
-                exist, dir_x_s, dir_z_s, norm_dist_s, norm_pkg_num = 0.0, 0.0, 0.0, 0.0, 0.0
+        #     if station is not None:
+        #         pkg_num = pkg_count.get(sid, 0)
+        #         # 根据有无包裹判断是否需要对该驿站的特征进行补零操作
+        #         exist = 1.0 if pkg_num > 0 else 0.0
+        #         if exist == 1.0:
+        #             target_pos_s = (station["pos"]["x"], station["pos"]["z"])
+        #             dir_x_s, dir_z_s, norm_dist_s = _get_target_feature(self.cur_pos, target_pos_s)
+        #             norm_pkg_num = pkg_count[sid] / 3.0          # [0, 1]
+        #         else:
+        #             dir_x_s, dir_z_s, norm_dist_s, norm_pkg_num = 0.0, 0.0, 0.0, 0.0
+        #     else: 
+        #         # 对本局没有的驿站进行补零
+        #         exist, dir_x_s, dir_z_s, norm_dist_s, norm_pkg_num = 0.0, 0.0, 0.0, 0.0, 0.0
             
-            station_feat_list.append(np.array([exist, dir_x_s, dir_z_s, norm_dist_s, norm_pkg_num]))
+        #     station_feat_list.append(np.array([exist, dir_x_s, dir_z_s, norm_dist_s, norm_pkg_num]))
 
-        station_feat = np.concatenate(station_feat_list)  # 50D
-        assert len(station_feat) == Config.TOTAL_STATIONS * Config.STATION_FEAT_DIM, \
-            f"station_feat dim error: expected {Config.TOTAL_STATIONS * Config.STATION_FEAT_DIM}, got {len(station_feat)}"
+        # station_feat = np.concatenate(station_feat_list)  # 50D
+        # assert len(station_feat) == Config.TOTAL_STATIONS * Config.STATION_FEAT_DIM, \
+        #     f"station_feat dim error: expected {Config.TOTAL_STATIONS * Config.STATION_FEAT_DIM}, got {len(station_feat)}"
+
+        target_ids = set(self.packages)
+
+        target_stations = [s for s in self.stations if s.get("config_id", 0) in target_ids]
+        sorted_stations = sorted(target_stations, 
+                                key=lambda s: np.sqrt((s["pos"]["x"] - self.cur_pos[0])**2 + 
+                                                    (s["pos"]["z"] - self.cur_pos[1])**2))
+
+        station_feat_list = []
+        for i in range(Config.MAX_TARGET_STATIONS):
+            if i < len(sorted_stations):
+                s = sorted_stations[i]
+                sid = s.get("config_id", 0)
+                target_pos_s = (s["pos"]["x"], s["pos"]["z"])
+                dir_x_s, dir_z_s, norm_dist_s = _get_target_feature(self.cur_pos, target_pos_s)
+                norm_pkg_num = pkg_count.get(sid, 0) / 3.0
+                station_feat_list.append(np.array([1.0, dir_x_s, dir_z_s, norm_dist_s, norm_pkg_num]))
+            else:
+                station_feat_list.append(np.zeros(Config.STATION_FEAT_DIM))
+
+        station_feat = np.concatenate(station_feat_list)  # 15D
 
         # 添加充电站特征
         # == 语义信息：1. 添加所有充电桩（4个），记录中心点与hero方向信息，计算边界到hero的距离信息
@@ -290,46 +311,45 @@ class Preprocessor:
             
             # 被抓获（距离<=1格，任务终止）
             if min_npc_dist <= 1:
-                reward -= 5.0
+                reward -= 1.0
             # 接近NPC预警（距离<=5格）
-            elif min_npc_dist <= 5:
-                reward -= 0.1 * (5 - min_npc_dist)  # 越近惩罚越大，范围[0.1, 0.4]
+            elif min_npc_dist <= 3:
+                reward -= 0.01 # * (3 - min_npc_dist)  # 越近惩罚越大，范围[0.1, 0.4]
 
         # 5. 奖励有包裹时，靠近当前携带包裹对应的驿站中距离最近的那个
-        if self.packages and self.stations:
-            # 找当前携带包裹对应的驿站中距离最近的
-            station_map = {s.get("config_id"): s for s in self.stations}
-            pkg_ids = set(self.packages)
+        # if self.packages and self.stations:
+        #     # 找当前携带包裹对应的驿站中距离最近的
+        #     station_map = {s.get("config_id"): s for s in self.stations}
+        #     pkg_ids = set(self.packages)
             
-            min_dist = float('inf')
-            for sid in pkg_ids:
-                s = station_map.get(sid)
-                if s is not None:
-                    dist = np.sqrt((s["pos"]["x"] - self.cur_pos[0])**2 +
-                                (s["pos"]["z"] - self.cur_pos[1])**2)
-                    if dist < min_dist:
-                        min_dist = dist
+        #     min_dist = float('inf')
+        #     for sid in pkg_ids:
+        #         s = station_map.get(sid)
+        #         if s is not None:
+        #             dist = np.sqrt((s["pos"]["x"] - self.cur_pos[0])**2 +
+        #                         (s["pos"]["z"] - self.cur_pos[1])**2)
+        #             if dist < min_dist:
+        #                 min_dist = dist
             
-            if self.prev_dist_to_target is not None:
-                dist_delta = self.prev_dist_to_target - min_dist
-                if dist_delta > 0:
-                    reward += 0.002 * dist_delta  # 只奖励靠近，不惩罚远离
-            self.prev_dist_to_target = min_dist
+        #     if self.prev_dist_to_target is not None:
+        #         dist_delta = self.prev_dist_to_target - min_dist
+        #         if dist_delta > 0:
+        #             reward += 0.01 * dist_delta  # 只奖励靠近，不惩罚远离
+        #     self.prev_dist_to_target = min_dist
 
-        else:
-            self.prev_dist_to_target = None
-
+        # else:
+        #     self.prev_dist_to_target = None
 
         # 6. 鼓励低电量是及时充电
         if self.prev_battery is not None:
             prev_battery_ratio = self.prev_battery / max(self.battery_max, 1)
             if self.battery == self.battery_max and prev_battery_ratio < 0.3:
-                reward += 0.3
+                reward += 0.00001
 
         # 7. 仓库奖励，奖励无包裹时返回仓库补充
         if self.prev_packages_count >= 0:    # 跳过第一步，此时prev_package_count为-1
             # 奖励在没有包裹的情况下，回到仓库又装好了
             if self.prev_packages_count == 0 and len(self.packages) == 3:
-                reward += 0.3
+                reward += 0.00001
 
         return [reward]
