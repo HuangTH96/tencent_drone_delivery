@@ -292,29 +292,29 @@ class Preprocessor:
         # 1. Delivery reward / 投递奖励
         newly_delivered = max(0, self.delivered - self.last_delivered)
         if newly_delivered > 0:
-            reward += 1.0 * newly_delivered
+            reward += Config.DELIVERED * newly_delivered
 
         # 2. Step penalty / 步数惩罚
-        reward -= 0.001
+        reward -= Config.STEP_PENALTY
 
         # 3. 惩罚原地不动
         if self.cur_pos == self.prev_pos:
-            reward -= 0.01
+            reward -= Config.STATIONARY_PENALTY
 
         # 4. 惩罚接近NPC，以及被抓获
-        if self.npcs:
-            min_npc_dist = min(
-                np.sqrt((npc["pos"]["x"] - self.cur_pos[0])**2 + 
-                        (npc["pos"]["z"] - self.cur_pos[1])**2)
-                for npc in self.npcs
-            )
+        # if self.npcs:
+        #     min_npc_dist = min(
+        #         np.sqrt((npc["pos"]["x"] - self.cur_pos[0])**2 + 
+        #                 (npc["pos"]["z"] - self.cur_pos[1])**2)
+        #         for npc in self.npcs
+        #     )
             
-            # 被抓获（距离<=1格，任务终止）
-            if min_npc_dist <= 1:
-                reward -= 1.0
-            # 接近NPC预警（距离<=5格）
-            elif min_npc_dist <= 3:
-                reward -= 0.01 # * (3 - min_npc_dist)  # 越近惩罚越大，范围[0.1, 0.4]
+        #     # 被抓获（距离<=1格，任务终止）
+        #     if min_npc_dist <= 1:
+        #         reward -= 1.0
+        #     # 接近NPC预警（距离<=5格）
+        #     elif min_npc_dist <= 3:
+        #         reward -= 0.01 # * (3 - min_npc_dist)  # 越近惩罚越大，范围[0.1, 0.4]
 
         # 5. 奖励有包裹时，靠近当前携带包裹对应的驿站中距离最近的那个
         if self.packages and self.stations:
@@ -334,9 +334,12 @@ class Preprocessor:
             if self.prev_dist_to_target is not None:
                 dist_delta = self.prev_dist_to_target - min_dist
                 if dist_delta > 0:
-                    reward += 0.01 * dist_delta  # 只奖励靠近，不惩罚远离
+                    reward += Config.APPROACH_STATION * dist_delta  # 靠近给奖励
+                    # print(f"【奖励】靠近目标，当前奖励为:{reward}")
+                else: 
+                    reward += Config.LEAVE_STATION * dist_delta     # 远离给惩罚
+                    # print(f"【惩罚】远离目标，当前奖励为：{reward}")
             self.prev_dist_to_target = min_dist
-
         else:
             self.prev_dist_to_target = None
 
@@ -351,5 +354,4 @@ class Preprocessor:
         #     # 奖励在没有包裹的情况下，回到仓库又装好了
         #     if self.prev_packages_count == 0 and len(self.packages) == 3:
         #         reward += 0.00001
-
         return [reward]

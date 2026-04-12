@@ -74,14 +74,21 @@ class Config:
     VALUE_NUM = 1
 
     # PPO hyperparameters / PPO 超参数
-    GAMMA = 0.995
+    GAMMA = 0.99
     LAMDA = 0.95
-    INIT_LEARNING_RATE_START = 0.0003
+    INIT_LEARNING_RATE_START = 0.0001
     # Moderate entropy coeff / 中等熵系数
-    BETA_START = 0.005
+    BETA_START = 0.01
     CLIP_PARAM = 0.2
     VF_COEF = 0.5
     GRAD_CLIP_RANGE = 0.5
     USE_GRAD_CLIP = True
 
     NUMB_HEAD = 1
+
+    # REWARD
+    DELIVERED = 1.0
+    APPROACH_STATION = 0.004 * DELIVERED
+    LEAVE_STATION = 0.005 * DELIVERED           # 防止刷分，所以惩罚力度大于奖励力度；考虑必要的绕路，所以惩罚力度远小于成功投递的力度
+    STEP_PENALTY = 0.0001 * DELIVERED
+    STATIONARY_PENALTY = 0.01 * DELIVERED
