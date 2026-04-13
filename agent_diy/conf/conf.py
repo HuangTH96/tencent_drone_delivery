@@ -90,17 +90,17 @@ class Config:
 
     ## 驿站相关
     DELIVERED = 1.0
-    APPROACH_STATION = 0.004 * DELIVERED
-    LEAVE_STATION = 0.005 * DELIVERED           # 防止刷分，所以惩罚力度大于奖励力度；考虑必要的绕路，所以惩罚力度远小于成功投递的力度
+    APPROACH_STATION = 0.01 * DELIVERED
+    LEAVE_STATION = 0.015 * DELIVERED           # 防止刷分，所以惩罚力度大于奖励力度；考虑必要的绕路，所以惩罚力度远小于成功投递的力度
     ## 充电站相关
-    RECHARGE = 0.1 * DELIVERED
+    RECHARGE = 0.02 * DELIVERED
     APPROACH_CHARGER = 0.01 * RECHARGE
     LEAVE_CHARGER = 0.015 * RECHARGE            # 防止刷分，所以惩罚力度大于奖励力度；考虑必要的绕路，所以惩罚力度远小于成功投递的力度
     ## 仓库相关
-    RESUPPLY = 0.2 * DELIVERED  # RECHARGE奖惩很像，但仓库又能充电，又能补给，重要性应该更高一点
+    RESUPPLY = 0.025 * DELIVERED                # RECHARGE奖惩很像，但仓库又能充电，又能补给，重要性应该更高一点
     APPROACH_WAREHOUSE = 0.01 * RESUPPLY
     LEAVE_WAREHOUSE = 0.015 * RESUPPLY
     ## 其他
     CAUGHT = 2 * DELIVERED
     STEP_PENALTY = 0.0001 * DELIVERED
-    STATIONARY_PENALTY = 0.01 * DELIVERED
+    STATIONARY_PENALTY = 0.05 * DELIVERED
