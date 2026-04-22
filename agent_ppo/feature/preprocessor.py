@@ -802,6 +802,8 @@ class Preprocessor:
         #     if self.target_dist <= 1.5:
         #         reward += Config.CAN_DELIVER_BONUS
 
+        
+
         return [float(reward)]
 
 
