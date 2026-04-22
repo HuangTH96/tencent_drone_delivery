@@ -712,25 +712,25 @@ class Preprocessor:
         return vector_obs, image_obs, privileged_feature, legal_action, reward
 
     def _reward_process(self):
-        # 基础步惩罚
+        # =========== 基础步惩罚 =========== 
         reward = Config.STEP_PENALTY
 
-        # 投递奖励
+        # =========== 投递奖励 =========== 
         newly_delivered = max(0, self.delivered - self.prev_delivered)
         if newly_delivered > 0:
             reward += Config.DELIVERY_REWARD * newly_delivered
 
-        # 捡包奖励
+        # =========== 捡包奖励 =========== 
         picked_count = max(0, len(self.packages) - len(self.prev_packages))
         if picked_count > 0 and self.on_warehouse:
             reward += Config.PICKUP_REWARD * picked_count
 
-        # 充电奖励
+        # ===========  充电奖励 =========== 
         battery_gain = max(0, self.battery - self.prev_battery)
         if battery_gain > 0 and self.on_charger:
             reward += Config.CHARGE_GAIN_SCALE * battery_gain
 
-        # 靠近目标奖励
+        # =========== 近目标奖励 =========== 
         if self.prev_target_dist is not None and self.target_dist is not None:
             progress = np.clip(self.prev_target_dist - self.target_dist, -2.0, 2.0)
             # 投递优先于补给
@@ -739,53 +739,68 @@ class Preprocessor:
             else:
                 reward += 0.5 * Config.STATION_PROGRESS_SCALE * progress
 
-        # 补给进度奖励
-        battery_ratio = self.battery / max(self.battery_max, 1)
+        # =========== 补给进度奖励 =========== 
+        # battery_ratio = self.battery / max(self.battery_max, 1)
+        # if self.prev_supply_dist is not None and self.supply_dist is not None:
+        #     # TODO：supply包括了充电站和仓库，无包裹时应该鼓励前往仓库，而非充电站
+        #     supply_progress = np.clip(self.prev_supply_dist - self.supply_dist, -2.0, 2.0)
+        #     # 低电量时鼓励靠近充电站
+        #     # if battery_ratio < 0.25:
+        #     if self.prev_need_recharge:
+        #         reward += Config.CHARGER_PROGRESS_SCALE * supply_progress
+        #         if supply_progress < 0:
+        #             reward += Config.LOW_BATTERY_MOVE_AWAY_PENALTY
+        #     # 无包裹时鼓励靠近仓库
+        #     if len(self.packages) == 0:
+        #         reward += Config.WAREHOUSE_PROGRESS_SCALE * supply_progress
+        #         if supply_progress < 0:
+        #             reward += Config.EMPTY_LOAD_MOVE_AWAY_PENALTY
+
         if self.prev_supply_dist is not None and self.supply_dist is not None:
-            # TODO：supply包括了充电站和仓库，无包裹时应该鼓励前往仓库，而非充电站
             supply_progress = np.clip(self.prev_supply_dist - self.supply_dist, -2.0, 2.0)
-            # 低电量是鼓励靠近充电站
-            # if battery_ratio < 0.25:
             if self.prev_need_recharge:
                 reward += Config.CHARGER_PROGRESS_SCALE * supply_progress
                 if supply_progress < 0:
                     reward += Config.LOW_BATTERY_MOVE_AWAY_PENALTY
-            # 无包裹是鼓励靠近仓库
-            if len(self.packages) == 0:
-                reward += Config.WAREHOUSE_PROGRESS_SCALE * supply_progress
-                if supply_progress < 0:
-                    reward += Config.EMPTY_LOAD_MOVE_AWAY_PENALTY
+        
+        if len(self.packages) == 0 and self.warehouse and self.prev_pos is not None:
+            w_pos = (self.warehouse["pos"]["x"], self.warehouse["pos"]["z"])
+            warehouse_dist = euclidean(self.cur_pos, w_pos)
+            prev_warehouse_dist = euclidean(self.prev_pos, w_pos)
+            warehouse_progress = np.clip(prev_warehouse_dist - warehouse_dist, -2.0, 2.0) 
+            reward += Config.WAREHOUSE_PROGRESS_SCALE * warehouse_progress
+            if warehouse_progress < 0:
+                reward += Config.EMPTY_LOAD_MOVE_AWAY_PENALTY
 
-        # 惩罚无效移动，防止卡死
+        # =========== 惩罚无效移动，防止卡死 =========== 
         if self.prev_pos is not None and self.last_action != -1 and self.prev_pos == self.cur_pos:
             reward += Config.INVALID_MOVE_PENALTY
 
-        # 振荡和重复惩罚
-        # TODO：重复为什么要惩罚？不一定是原地踏步，有可能就是需要笔直地往一个方向运动
+        # =========== 振荡惩罚 =========== 
         if self.prev_action != -1 and self.prev_prev_action != -1:
             if OPPOSITE_ACTION.get(self.prev_prev_action, -99) == self.prev_action:
                 reward += Config.OSCILLATION_PENALTY
-            if self.prev_prev_action == self.prev_action:
-                reward += Config.REPEAT_MOVE_PENALTY
+            # if self.prev_prev_action == self.prev_action:
+            #     reward += Config.REPEAT_MOVE_PENALTY
 
-        # NPC危险惩罚
-        # TODO：惩罚地是“现在离npc近”，而不是“动作导致离npc更近”
+        # =========== NPC危险惩罚 ===========
+        # TODO：惩罚的是“现在离npc近”，而不是“动作导致离npc更近”
         if self.npc_dist is not None and self.npc_dist < Config.NPC_DANGER_RADIUS:
             reward -= Config.NPC_DANGER_PENALTY_SCALE * (Config.NPC_DANGER_RADIUS - self.npc_dist)
 
-        # 到达补给地一次性奖励
+        # =========== 到达补给地一次性奖励 =========== 
         # TODO：仓库既能充电又能补充包裹，他的奖励是不是应该和给充电站的不一样？
         if len(self.prev_packages) == 0 and self.on_warehouse:
             reward += Config.SUPPLY_BONUS
 
-        # 低电量时，仅鼓励去充电站充电，不鼓励去仓库
+        # =========== 低电量时，仅鼓励去充电站充电，不鼓励去仓库 =========== 
         if self.prev_need_recharge and self.on_charger:
             reward += Config.SUPPLY_BONUS
 
         # TODO：有必要么？会不会导致在目标周围徘徊，刷分？
-        if len(self.packages) > 0 and self.primary_target_kind == "station" and self.target_dist is not None:
-            if self.target_dist <= 1.5:
-                reward += Config.CAN_DELIVER_BONUS
+        # if len(self.packages) > 0 and self.primary_target_kind == "station" and self.target_dist is not None:
+        #     if self.target_dist <= 1.5:
+        #         reward += Config.CAN_DELIVER_BONUS
 
         return [float(reward)]
 
