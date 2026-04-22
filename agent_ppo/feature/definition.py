@@ -28,9 +28,9 @@ ActData = create_cls("ActData", action=None, d_action=None, prob=None, value=Non
 # 样本数据：字段值为 int 时框架自动按维度处理
 SampleData = create_cls(
     "SampleData",
-    vector_obs=Config.VECTOR_OBS_DIM,
-    image_obs=Config.IMAGE_FLAT_DIM,
-    priv_obs=Config.PRIVILEGED_DIM,
+    vector_obs=Config.VECTOR_OBS_DIM,       # 向量观测
+    image_obs=Config.IMAGE_FLAT_DIM,        # 展平后的图像观测
+    priv_obs=Config.PRIVILEGED_DIM,         # priviliged 观测
     legal_action=Config.ACTION_NUM,
     act=1,
     reward=Config.VALUE_NUM,

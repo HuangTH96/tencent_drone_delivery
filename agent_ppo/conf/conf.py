@@ -19,6 +19,7 @@ class Config:
     VECTOR_RESOURCE_DIM = 3
     VECTOR_DIR_GUIDE_DIM = 8
 
+    # TODO：为什么不关注所有chargers和NPCs？
     TOPK_STATION_K = 3
     TOPK_CHARGER_K = 2
     TOPK_NPC_K = 3
