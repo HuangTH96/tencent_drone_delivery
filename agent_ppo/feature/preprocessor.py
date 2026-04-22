@@ -785,8 +785,13 @@ class Preprocessor:
 
         # =========== NPC危险惩罚 ===========
         # TODO：惩罚的是“现在离npc近”，而不是“动作导致离npc更近”
-        if self.npc_dist is not None and self.npc_dist < Config.NPC_DANGER_RADIUS:
-            reward -= Config.NPC_DANGER_PENALTY_SCALE * (Config.NPC_DANGER_RADIUS - self.npc_dist)
+        if self.npc_dist is not None:
+            if self.npc_dist <= 1.0:
+                # 被抓住，强惩罚
+                reward -= Config.NPC_CATCH_PENALTY
+            elif self.npc_dist < Config.NPC_DANGER_RADIUS:
+                # 危险区域，线性惩罚
+                reward -= Config.NPC_DANGER_PENALTY_SCALE * (Config.NPC_DANGER_RADIUS - self.npc_dist)
 
         # =========== 到达补给地一次性奖励 =========== 
         # TODO：仓库既能充电又能补充包裹，他的奖励是不是应该和给充电站的不一样？
@@ -802,7 +807,7 @@ class Preprocessor:
         #     if self.target_dist <= 1.5:
         #         reward += Config.CAN_DELIVER_BONUS
 
-        
+        # TODO：增加轨迹奖励，要求在前往目标的路上，尽量减少cost
 
         return [float(reward)]
 
