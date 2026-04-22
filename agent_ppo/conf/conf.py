@@ -116,5 +116,6 @@ class Config:
     LOW_BATTERY_MOVE_AWAY_PENALTY = -0.020
     EMPTY_LOAD_MOVE_AWAY_PENALTY = -0.010
 
+    RECHARGE_MARGIN = 15    
     # ---------------- Misc ----------------
     SAVE_OPTIMIZER_STATE = False

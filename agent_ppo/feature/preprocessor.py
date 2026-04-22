@@ -79,6 +79,8 @@ class Preprocessor:
         self.on_warehouse = False
         self.on_charger = False
 
+        self.prev_need_recharge = False
+        self.need_recharge_flag = False
         self.prev_pos = None
         self.prev_delivered = 0
         self.prev_battery = self.battery
@@ -109,6 +111,7 @@ class Preprocessor:
     - 记录历史。包括位置、投送数量、电量、剩余包裹、目标距离、离仓库距离、离npc距离、目标类型
     """
     def _parse_obs(self, env_obs):
+        self.prev_need_recharge = self._need_recharge() 
         self.prev_pos = self.cur_pos
         self.prev_delivered = self.delivered
         self.prev_battery = self.battery
@@ -168,6 +171,7 @@ class Preprocessor:
         self.target_dist, self.primary_target_kind, self.primary_target_pos = self._select_primary_target()
         self.supply_dist = self._get_supply_dist()
         self.npc_dist = self._get_nearest_npc_dist()
+        self.need_recharge_flag = self._need_recharge()
 
     """
     判断是否进入仓库范围内。
@@ -181,9 +185,9 @@ class Preprocessor:
         z = self.warehouse["pos"]["z"]
         w = int(self.warehouse.get("w", 1))
         h = int(self.warehouse.get("h", 1))
-        # 地图左上角为原点，x向右增加，z向下增加；TODO 检查仓库坐标是否是仓库中心点，w、h分别向左右和上下扩展
-        return x <= self.cur_pos[0] < x + w and z <= self.cur_pos[1] < z + h
-        # return x - w // 2 <= self.cur_pos[0] < x + w // 2 and z - h // 2 <= self.cur_pos[1] < z + h // 2
+        # 地图左上角为原点，x向右增加，z向下增加；假设仓库坐标在正中心
+        # return x <= self.cur_pos[0] < x + w and z <= self.cur_pos[1] < z + h
+        return x - (w - 1) / 2 <= self.cur_pos[0] < x + (w - 1) / 2 and z - (h - 1) / 2 <= self.cur_pos[1] < z + (h - 1) / 2
 
     """
     判断是否进入充电桩的可充电范围内
@@ -199,7 +203,7 @@ class Preprocessor:
         return False
 
     """
-    计算离**所有**可充电区域的距离
+    计算离**所有**可充电区域中最近的距离
     """
     def _get_supply_dist(self) -> Optional[float]:
         dists = []
@@ -240,57 +244,95 @@ class Preprocessor:
     - 电量低于25%时，优先去充电；
     - 其他情况下，去最近的目标驿站。
     """
+    # def _select_primary_target(self):
+    #     battery_ratio = self.battery / max(self.battery_max, 1)
+    #     target_stations = list(self._iter_target_stations())
+
+    #     # 如果没有包裹，计算离**仓库正中心**的距离
+    #     # TODO：考虑电量是否能够支撑到仓库
+    #     if len(self.packages) == 0:
+    #         if self.warehouse:
+    #         # if _is_reachable(self.warehouse, self.battery):
+    #             # pos = (float(self.warehouse["pos"]["x"]), float(self.warehouse["pos"]["z"]))
+    #             pos = (self.warehouse["pos"]["x"], self.warehouse["pos"]["z"])
+    #             return euclidean(self.cur_pos, pos), "warehouse", pos
+    #         # else:
+    #         #     return nearest_charger_dist, "charger", nearest_charger_pos
+    #         return None, "none", self.cur_pos
+        
+    #     # 如果电量低于25%，计算离**最近的可充电区域**的距离
+    #     # TODO：应该让模型自己判断是否需要去充电，而不是简单地以电量硬阈值进行切换，可以考虑将电量和离可充电区域的距离都作为输入特征，让模型自己学会权衡；或者用宋的路径感知代替阈值
+    #     if battery_ratio < 0.25:
+    #         best_pos = None
+    #         best_dist = None
+    #         kind = "charger"
+    #         if self.warehouse:
+    #             # w_pos = (float(self.warehouse["pos"]["x"]), float(self.warehouse["pos"]["z"]))
+    #             w_pos = self.warehouse["pos"]["x"], self.warehouse["pos"]["z"]
+    #             best_pos = w_pos
+    #             best_dist = euclidean(self.cur_pos, w_pos)
+    #             kind = "warehouse"
+    #         for c in self.chargers:
+    #             # c_pos = (float(c["pos"]["x"]), float(c["pos"]["z"]))
+    #             c_pos = (c["pos"]["x"], c["pos"]["z"])
+    #             d = euclidean(self.cur_pos, c_pos)
+    #             # TODO：把 _get_local_passable 已有的地图信息用来过滤掉明显被障碍物阻挡的方向，直线距离作为 fallback
+    #             if best_dist is None or d < best_dist:
+    #                 best_pos, best_dist, kind = c_pos, d, "charger"
+    #         if best_pos is not None:
+    #             return best_dist, kind, best_pos
+
+    #     # 有包裹，且电量多于25%时，返回最近的目标驿站距离
+    #     # TODO：26%的电量也不够去驿站，但是不会以充电站或者仓库为目标
+    #     if target_stations:
+    #         # target_stations.sort(key=lambda s: euclidean(self.cur_pos, (float(s["pos"]["x"]), float(s["pos"]["z"]))))
+    #         target_stations.sort(key=lambda s: euclidean(self.cur_pos, (s["pos"]["x"], s["pos"]["z"])))
+    #         s = target_stations[0]
+    #         # pos = (float(s["pos"]["x"]), float(s["pos"]["z"]))
+    #         pos = s["pos"]["x"], s["pos"]["z"]
+    #         return euclidean(self.cur_pos, pos), "station", pos
+        
+    #     # 防御性代码，永远不会被执行
+    #     return None, "none", self.cur_pos
+
     def _select_primary_target(self):
-        battery_ratio = self.battery / max(self.battery_max, 1)
         target_stations = list(self._iter_target_stations())
 
-        # 如果没有包裹，计算离**仓库正中心**的距离
-        # TODO：考虑电量是否能够支撑到仓库
+        # 无包裹时
         if len(self.packages) == 0:
             if self.warehouse:
-            # if _is_reachable(self.warehouse, self.battery):
-                # pos = (float(self.warehouse["pos"]["x"]), float(self.warehouse["pos"]["z"]))
-                pos = (self.warehouse["pos"]["x"], self.warehouse["pos"]["z"])
-                return euclidean(self.cur_pos, pos), "warehouse", pos
-            # else:
-            #     return nearest_charger_dist, "charger", nearest_charger_pos
-            return None, "none", self.cur_pos
-
-        # 如果电量低于25%，计算离**最近的可充电区域**的距离
-        # TODO：应该让模型自己判断是否需要去充电，而不是简单地以电量硬阈值进行切换，可以考虑将电量和离可充电区域的距离都作为输入特征，让模型自己学会权衡；或者用宋的路径感知代替阈值
-        if battery_ratio < 0.25:
-            best_pos = None
-            best_dist = None
-            kind = "charger"
-            if self.warehouse:
-                # w_pos = (float(self.warehouse["pos"]["x"]), float(self.warehouse["pos"]["z"]))
                 w_pos = self.warehouse["pos"]["x"], self.warehouse["pos"]["z"]
-                best_pos = w_pos
-                best_dist = euclidean(self.cur_pos, w_pos)
-                kind = "warehouse"
-            for c in self.chargers:
-                # c_pos = (float(c["pos"]["x"]), float(c["pos"]["z"]))
-                c_pos = (c["pos"]["x"], c["pos"]["z"])
-                d = euclidean(self.cur_pos, c_pos)
-                # TODO：把 _get_local_passable 已有的地图信息用来过滤掉明显被障碍物阻挡的方向，直线距离作为 fallback
-                if best_dist is None or d < best_dist:
-                    best_pos, best_dist, kind = c_pos, d, "charger"
-            if best_pos is not None:
-                return best_dist, kind, best_pos
+                w_dist = euclidean(self.cur_pos, w_pos)
 
-        # 有包裹，且电量多于25%时，返回最近的目标驿站距离
-        # TODO：26%的电量也不够去驿站，但是不会以充电站或者仓库为目标
+                # 电量足够到仓库，优先回仓库
+                if self.battery >= w_dist + Config.RECHARGE_MARGIN:
+                    return w_dist, "warehouse", w_pos
+                
+                # 电量不足到仓库，但足够到充电站，优先去充电
+                best_pos, best_dist, kind = self._find_nearest_supply()
+                if best_pos is not None:
+                    return best_dist, kind, best_pos
+                
+                # 防御性fallback：没有补给点，硬着头皮去仓库
+                return w_dist, "warehouse", w_pos
+            return None, "none", self.cur_pos
+        
+        # 有包裹时，判断是否需要充电
+        if self._need_recharge():
+            best_pos, best_dist, kind = self._find_nearest_supply()
+            if best_pos is not None:
+                return best_dist, kind, best_pos   
+            
+        # 电量足够，去最近的目标驿站
         if target_stations:
-            # target_stations.sort(key=lambda s: euclidean(self.cur_pos, (float(s["pos"]["x"]), float(s["pos"]["z"]))))
             target_stations.sort(key=lambda s: euclidean(self.cur_pos, (s["pos"]["x"], s["pos"]["z"])))
             s = target_stations[0]
-            # pos = (float(s["pos"]["x"]), float(s["pos"]["z"]))
             pos = s["pos"]["x"], s["pos"]["z"]
             return euclidean(self.cur_pos, pos), "station", pos
         
-        # 防御性代码，永远不会被执行
+        # 防御性代码
         return None, "none", self.cur_pos
-
+        
     """
     判断从当前位置（dx, dz）移动一步是否可行
     """
@@ -339,7 +381,7 @@ class Preprocessor:
         tgt_vec = (self.primary_target_pos[0] - self.cur_pos[0], self.primary_target_pos[1] - self.cur_pos[1])
         tgt_norm = math.sqrt(tgt_vec[0] ** 2 + tgt_vec[1] ** 2)
         # TODO：低电量加成只在电量低于25%时有效，应该优化充电决策逻辑
-        low_battery = self.battery / max(self.battery_max, 1) < 0.25
+        # low_battery = self.battery / max(self.battery_max, 1) < 0.25
 
         for a in range(8):
             dx, dz = ACTION_TO_DELTA[a]
@@ -366,7 +408,8 @@ class Preprocessor:
             score = 0.50 * align + 0.24 * move_ok + 0.20 * npc_safe - reverse_penalty
 
             # 低电量时，加强目标对齐的得分
-            if low_battery and self.primary_target_kind in {"charger", "warehouse"}:
+            # if low_battery and self.primary_target_kind in {"charger", "warehouse"}:
+            if self.need_recharge_flag and self.primary_target_kind in {"charger", "warehouse"}:    
                 score += 0.06 * align
             scores.append(score)
         return np.array(scores, dtype=np.float32)
@@ -466,7 +509,8 @@ class Preprocessor:
                 if euclidean(self.cur_pos, pos) <= 1.5:
                     can_deliver_now = 1.0
 
-        need_supply = 1.0 if (len(self.packages) == 0 or battery_ratio < 0.25) else 0.0
+        # need_supply = 1.0 if (len(self.packages) == 0 or battery_ratio < 0.25) else 0.0
+        need_supply = 1.0 if (len(self.packages) == 0 or self.need_recharge_flag) else 0.0
         task_stage = np.array(
             [
                 1.0 if len(self.packages) > 0 else 0.0,
@@ -701,7 +745,8 @@ class Preprocessor:
             # TODO：supply包括了充电站和仓库，无包裹时应该鼓励前往仓库，而非充电站
             supply_progress = np.clip(self.prev_supply_dist - self.supply_dist, -2.0, 2.0)
             # 低电量是鼓励靠近充电站
-            if battery_ratio < 0.25:
+            # if battery_ratio < 0.25:
+            if self.prev_need_recharge:
                 reward += Config.CHARGER_PROGRESS_SCALE * supply_progress
                 if supply_progress < 0:
                     reward += Config.LOW_BATTERY_MOVE_AWAY_PENALTY
@@ -732,9 +777,9 @@ class Preprocessor:
         # TODO：仓库既能充电又能补充包裹，他的奖励是不是应该和给充电站的不一样？
         if len(self.prev_packages) == 0 and self.on_warehouse:
             reward += Config.SUPPLY_BONUS
-        # TODO: 优化需要充电地逻辑
-        # if _need_recharge(self.prev_battery) and self.on_charger:
-        if self.prev_battery / max(self.battery_max, 1) < 0.25 and self.on_charger:
+
+        # 低电量时，仅鼓励去充电站充电，不鼓励去仓库
+        if self.prev_need_recharge and self.on_charger:
             reward += Config.SUPPLY_BONUS
 
         # TODO：有必要么？会不会导致在目标周围徘徊，刷分？
@@ -743,3 +788,58 @@ class Preprocessor:
                 reward += Config.CAN_DELIVER_BONUS
 
         return [float(reward)]
+
+
+    """
+    判断当前电量是否能够完成剩余任务，有两个场景：
+
+    - 有包裹，需要去驿站；
+    - 无包裹，需要回仓库。
+    """
+    def _need_recharge(self) -> bool:
+        supply_dist = self.supply_dist if self.supply_dist is not None else 999.0
+        margin = Config.RECHARGE_MARGIN # 绕路的冗余距离
+
+        # 如果所剩步数不可能再补货或者充电，则应该殊死一搏
+        steps_remain = self.max_step - self.step_no
+        if steps_remain < supply_dist + margin and self.primary_target_kind == "station":
+            return False
+        
+        # 如果电量不足以支持到最近的可充电区域，则立刻需要充电
+        if self.battery <= supply_dist + margin:
+            return True
+
+        # 有包裹，且正在前往投递的路上时，电量不足以支持到目标驿站或者补给地，则需要充电
+        if len(self.packages) > 0 and self.target_dist is not None and self.primary_target_kind == "station":
+            if self.battery < self.target_dist + supply_dist + margin:
+                return True
+        
+        # 无包裹，但电量不足以支持到仓库，则需要充电
+        if len(self.packages) == 0 and self.warehouse:
+            w_pos = (self.warehouse["pos"]["x"], self.warehouse["pos"]["z"])
+            warehouse_dist = euclidean(self.cur_pos, w_pos)
+            if self.battery < warehouse_dist + margin:
+                return True
+
+        return False
+    
+    """
+    找最近的补给点（仓库或充电桩），返回 (pos, dist, kind)
+    """
+    def _find_nearest_supply(self):
+        best_pos = None
+        best_dist = None
+        kind = None
+
+        if self.warehouse:
+            w_pos = (self.warehouse["pos"]["x"], self.warehouse["pos"]["z"])
+            w_dist = euclidean(self.cur_pos, w_pos)
+            best_pos, best_dist, kind = w_pos, w_dist, "warehouse"
+
+        for c in self.chargers:
+            c_pos = (c["pos"]["x"], c["pos"]["z"])
+            d = euclidean(self.cur_pos, c_pos)
+            if best_dist is None or d < best_dist:
+                best_pos, best_dist, kind = c_pos, d, "charger"
+
+        return best_pos, best_dist, kind
