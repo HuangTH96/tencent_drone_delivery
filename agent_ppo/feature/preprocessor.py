@@ -780,9 +780,10 @@ class Preprocessor:
         if self.prev_action != -1 and self.prev_prev_action != -1:
             if OPPOSITE_ACTION.get(self.prev_prev_action, -99) == self.prev_action:
                 reward += Config.OSCILLATION_PENALTY
-            # if self.prev_prev_action == self.prev_action:
-            #     reward += Config.REPEAT_MOVE_PENALTY
-
+            # 引入重复奖励，期望走直线，提高效率
+            if self.prev_prev_action == self.prev_action:
+                # reward += Config.REPEAT_MOVE_PENALTY
+                reward += Config.REPEAT_MOVE_REWARD
         # =========== NPC危险惩罚 ===========
         # TODO：惩罚的是“现在离npc近”，而不是“动作导致离npc更近”
         if self.npc_dist is not None:
