@@ -395,10 +395,19 @@ class Preprocessor:
 
             next_pos = (self.cur_pos[0] + dx, self.cur_pos[1] + dz)
             if self.npcs:
-                # nearest_next_npc = min(euclidean(next_pos, (float(n["pos"]["x"]), float(n["pos"]["z"]))) for n in self.npcs)
                 nearest_next_npc = min(euclidean(next_pos, (n["pos"]["x"], n["pos"]["z"])) for n in self.npcs)
-                npc_safe = norm(min(nearest_next_npc, 6.0), 6.0)
+                
+                if nearest_next_npc <= Config.NPC_CATCH_DIST_MAX:
+                    # 只要走这一步，就一定被抓
+                    npc_safe -= 1.0
+                elif nearest_next_npc < Config.NPC_DANGER_RADIUS:
+                    # 危险区域
+                    ratio = (Config.NPC_DANGER_RADIUS_MAX - nearest_next_npc) / (Config.NPC_DANGER_RADIUS_MAX - Config.NPC_CATCH_DIST_MAX)
+                    penalty = (math.exp(Config.NPC_PENALTY_K * ratio) - 1) / (math.exp(Config.NPC_PENALTY_K) - 1)
+                    npc_safe = 1.0 - penalty 
+                npc_safe = norm(min(nearest_next_npc, 4.0), 4.0)
             else:
+                # 危险区域外，安全
                 npc_safe = 1.0
 
             # 惩罚动作来回切换
@@ -785,9 +794,15 @@ class Preprocessor:
 
         # =========== NPC危险惩罚 ===========
         # TODO：惩罚的是“现在离npc近”，而不是“动作导致离npc更近”
-        if self.npc_dist is not None and self.npc_dist < Config.NPC_DANGER_RADIUS:
-            reward -= Config.NPC_DANGER_PENALTY_SCALE * (Config.NPC_DANGER_RADIUS - self.npc_dist)
-
+        # 换成指数级的，离npc周边3*3范围越近，惩罚越大，贴着3*3边缘的时候，惩罚应该仅仅略小于被抓住
+        # 离危险区域越远，惩罚力度骤减
+        if self.npc_dist is not None:
+            if self.npc_dist <= Config.NPC_CATCH_DIST_MAX:
+                reward -= Config.NPC_CATCH_PENALTY
+        elif self.npc_dist < Config.NPC_DANGER_RADIUS_MAX:
+            ratio = (Config.NPC_DANGER_RADIUS_MAX - self.npc_dist) / (Config.NPC_DANGER_RADIUS_MAX - Config.NPC_CATCH_DIST_MAX)
+            penalty = Config.NPC_MAX_PENALTY * (math.exp(Config.NPC_PENALTY_K * ratio) - 1) / (math.exp(Config.NPC_PENALTY_K) - 1)
+            reward -= penalty
         # =========== 到达补给地一次性奖励 =========== 
         # TODO：仓库既能充电又能补充包裹，他的奖励是不是应该和给充电站的不一样？
         if len(self.prev_packages) == 0 and self.on_warehouse:

@@ -5,6 +5,7 @@ Stronger Drone Delivery PPO configuration.
 更强版智运无人机 PPO 配置。
 """
 
+import math
 
 class Config:
     # ---------------- Observation dimensions ----------------
@@ -108,8 +109,14 @@ class Config:
     OSCILLATION_PENALTY = -0.018
     REPEAT_MOVE_PENALTY = -0.006
 
-    NPC_DANGER_PENALTY_SCALE = 0.048
-    NPC_DANGER_RADIUS = 3.0
+    NPC_DANGER_PENALTY_SCALE = 0.048 
+    # NPC_CATCH_DIST_MIN = 1
+    NPC_CATCH_DIST_MAX = math.sqrt(2)            # 考虑对角线上移动的情况
+    # NPC_DANGER_RADIUS_MIN = NPC_CATCH_DIST_MIN + 3
+    NPC_DANGER_RADIUS_MAX = NPC_CATCH_DIST_MAX + 3 * math.sqrt(2)         # 危险区域半径   
+    NPC_MAX_PENALTY = 0.6           # 紧挨npc周边8个单位时的最大惩罚
+    NPC_PENALTY_K = 4.0             # 惩罚指数的陡峭程度
+    NPC_CATCH_PENALTY = 1.0         # 被抓惩罚
 
     CAN_DELIVER_BONUS = 0.06
     SUPPLY_BONUS = 0.06
