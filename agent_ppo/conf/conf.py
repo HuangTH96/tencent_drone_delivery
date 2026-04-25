@@ -22,12 +22,13 @@ class Config:
 
     # TODO：为什么不关注所有chargers和NPCs？
     TOPK_STATION_K = 3
-    TOPK_CHARGER_K = 2
-    TOPK_NPC_K = 3
+    TOPK_CHARGER_K = 4
+    TOPK_NPC_K = 4
     VECTOR_TOPK_STATION_DIM = TOPK_STATION_K * 4
     VECTOR_TOPK_CHARGER_DIM = TOPK_CHARGER_K * 3
     VECTOR_TOPK_NPC_DIM = TOPK_NPC_K * 3
     VECTOR_COUNT_SUMMARY_DIM = 3
+    VECTOR_PATH_PLANNER = 8
 
     VECTOR_OBS_DIM = (
         VECTOR_TASK_STAGE_DIM
@@ -40,6 +41,7 @@ class Config:
         + VECTOR_TOPK_CHARGER_DIM
         + VECTOR_TOPK_NPC_DIM
         + VECTOR_COUNT_SUMMARY_DIM
+        + VECTOR_PATH_PLANNER
     )
 
     # Legacy constants retained for compatibility with existing logic.
@@ -109,7 +111,7 @@ class Config:
     OSCILLATION_PENALTY = -0.018
     REPEAT_MOVE_PENALTY = -0.006
 
-    NPC_DANGER_PENALTY_SCALE = 0.048 
+    # NPC_DANGER_PENALTY_SCALE = 0.048 
     # NPC_CATCH_DIST_MIN = 1
     NPC_CATCH_DIST_MAX = math.sqrt(2)            # 考虑对角线上移动的情况
     # NPC_DANGER_RADIUS_MIN = NPC_CATCH_DIST_MIN + 3

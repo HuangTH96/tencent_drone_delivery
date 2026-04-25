@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from agent_ppo.conf.conf import Config
+from agent_ppo.feature.path_planner import get_first_step_action
 
 ACTION_TO_DELTA = {
     0: (1, 0),
@@ -100,6 +101,8 @@ class Preprocessor:
         self.primary_target_kind = "none"
         self.primary_target_pos = self.cur_pos
 
+        self.path_first_action = None
+
     def _update_action_history(self, last_action):
         self.prev_prev_action = self.prev_action
         self.prev_action = int(last_action) if last_action is not None else -1
@@ -173,6 +176,7 @@ class Preprocessor:
         self.npc_dist = self._get_nearest_npc_dist()
         self.need_recharge_flag = self._need_recharge()
 
+        self.path_first_action = self._get_path_first_action()
     """
     判断是否进入仓库范围内。
 
@@ -399,13 +403,15 @@ class Preprocessor:
                 
                 if nearest_next_npc <= Config.NPC_CATCH_DIST_MAX:
                     # 只要走这一步，就一定被抓
-                    npc_safe -= 1.0
-                elif nearest_next_npc < Config.NPC_DANGER_RADIUS:
+                    npc_safe = -1.0
+                elif nearest_next_npc < Config.NPC_DANGER_RADIUS_MAX:
                     # 危险区域
                     ratio = (Config.NPC_DANGER_RADIUS_MAX - nearest_next_npc) / (Config.NPC_DANGER_RADIUS_MAX - Config.NPC_CATCH_DIST_MAX)
                     penalty = (math.exp(Config.NPC_PENALTY_K * ratio) - 1) / (math.exp(Config.NPC_PENALTY_K) - 1)
                     npc_safe = 1.0 - penalty 
-                npc_safe = norm(min(nearest_next_npc, 4.0), 4.0)
+                else: 
+                    npc_safe = 1.0
+                # npc_safe = norm(min(nearest_next_npc, 4.0), 4.0)
             else:
                 # 危险区域外，安全
                 npc_safe = 1.0
@@ -549,7 +555,7 @@ class Preprocessor:
         # 安全特征
         ## 最近的npc的归一化距离 + 是否在 npc 3个单元内
         npc_min_dist_norm = norm(self.npc_dist if self.npc_dist is not None else 12.0, 12.0)
-        near_npc = 1.0 if (self.npc_dist is not None and self.npc_dist <= Config.NPC_DANGER_RADIUS) else 0.0
+        near_npc = 1.0 if (self.npc_dist is not None and self.npc_dist <= Config.NPC_DANGER_RADIUS_MAX) else 0.0
         ## 可行动作越少，说明周围障碍物越多
         legal_count = sum(int(v > 0) for v in legal_action)
         legal_count_norm = norm(legal_count, 8)
@@ -593,6 +599,11 @@ class Preprocessor:
         )
         npc_topk = self._make_topk_entity_feature(npc_pos, Config.TOPK_NPC_K, with_target=False)
 
+        # 路径规划方向（8D one-hot）
+        path_dir = np.zeros(8, dtype=np.float32)
+        if self.path_first_action is not None:
+            path_dir[self.path_first_action] = 1.0
+
         count_summary = np.array(
             [norm(len(target_station_pos), Config.TOPK_STATION_K), norm(len(self.chargers), Config.MAX_CHARGER_COUNT), norm(len(self.npcs), Config.MAX_NPC_COUNT)],
             dtype=np.float32,
@@ -610,6 +621,7 @@ class Preprocessor:
                 charger_topk,
                 npc_topk,
                 count_summary,
+                path_dir
             ],
             dtype=np.float32,
         )
@@ -799,10 +811,11 @@ class Preprocessor:
         if self.npc_dist is not None:
             if self.npc_dist <= Config.NPC_CATCH_DIST_MAX:
                 reward -= Config.NPC_CATCH_PENALTY
-        elif self.npc_dist < Config.NPC_DANGER_RADIUS_MAX:
-            ratio = (Config.NPC_DANGER_RADIUS_MAX - self.npc_dist) / (Config.NPC_DANGER_RADIUS_MAX - Config.NPC_CATCH_DIST_MAX)
-            penalty = Config.NPC_MAX_PENALTY * (math.exp(Config.NPC_PENALTY_K * ratio) - 1) / (math.exp(Config.NPC_PENALTY_K) - 1)
-            reward -= penalty
+            elif self.npc_dist < Config.NPC_DANGER_RADIUS_MAX:
+                ratio = (Config.NPC_DANGER_RADIUS_MAX - self.npc_dist) / (Config.NPC_DANGER_RADIUS_MAX - Config.NPC_CATCH_DIST_MAX)
+                penalty = Config.NPC_MAX_PENALTY * (math.exp(Config.NPC_PENALTY_K * ratio) - 1) / (math.exp(Config.NPC_PENALTY_K) - 1)
+                reward -= penalty
+
         # =========== 到达补给地一次性奖励 =========== 
         # TODO：仓库既能充电又能补充包裹，他的奖励是不是应该和给充电站的不一样？
         if len(self.prev_packages) == 0 and self.on_warehouse:
@@ -873,3 +886,23 @@ class Preprocessor:
                 best_pos, best_dist, kind = c_pos, d, "charger"
 
         return best_pos, best_dist, kind
+    
+    def _get_path_first_action(self) -> Optional[int]:
+        if self.local_map is None or self.primary_target_kind == "none":
+            return None
+        
+        # NPC转局部坐标
+        npc_local = []
+        for n in self.npcs:
+            lx = 10 + int(round(n["pos"]["x"] - self.cur_pos[0]))
+            lz = 10 + int(round(n["pos"]["z"] - self.cur_pos[1]))
+            if 0 <= lx < 21 and 0 <= lz < 21:
+                npc_local.append((lx, lz))
+
+        return get_first_step_action(
+                    self.local_map,
+                    self.primary_target_pos,
+                    self.cur_pos,
+                    npc_local,
+                    Config.NPC_DANGER_RADIUS_MAX
+                )
