@@ -892,13 +892,16 @@ class Preprocessor:
             return None
         
         # NPC转局部坐标
-        npc_local = []
+        npc_local_expanded = []
         for n in self.npcs:
             lx = 10 + int(round(n["pos"]["x"] - self.cur_pos[0]))
             lz = 10 + int(round(n["pos"]["z"] - self.cur_pos[1]))
-            if 0 <= lx < 21 and 0 <= lz < 21:
-                npc_local.append((lx, lz))
-
+            # if 0 <= lx < 21 and 0 <= lz < 21:
+            #     npc_local.append((lx, lz))
+            npc_local_expanded.append((lx, lz))
+            for ddx, ddz in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(-1,1),(1,-1),(1,1)]:
+                npc_local_expanded.append((lx + ddx, lz + ddz))
+                
         return get_first_step_action(
                     self.local_map,
                     self.primary_target_pos,
